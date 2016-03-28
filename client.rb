@@ -14,7 +14,7 @@ module Chatbot
     include HTTParty
     include Events
 
-    USER_AGENT = 'sactage/chatbot-rb v2.1.0 (fyi socket.io sucks) [http://github.com/sactage/chatbot-rb]'
+    USER_AGENT = 'sactage/chatbot-rb v2.2.0 (fyi socket.io sucks) [http://github.com/sactage/chatbot-rb]'
     CONFIG_FILE = 'config.yml'
 
     attr_accessor :session, :clientid, :handlers, :config, :userlist, :api, :threads
@@ -61,6 +61,7 @@ module Chatbot
     # @param [Array<Plugin>] plugins The list of plugin classes to register
     def register_plugins(*plugins)
       plugins.each do |plugin|
+        $logger.info "Registering plugin #{plugin.name}"
         @plugins << plugin.new(self)
         @plugins.last.register
       end
@@ -68,11 +69,13 @@ module Chatbot
 
     # Save the current configuration to disk
     def save_config
+      $logger.info "Saving config file"
       File.open(CONFIG_FILE, File::WRONLY) { |f| f.write(@config.to_yaml) }
     end
 
     # Fetch important data from chat
     def fetch_chat_info
+      $logger.info "Fetching chat info"
       # @type [HTTParty::Response]
       res = HTTParty.get("#{@base_url}/wikia.php?controller=Chat&format=json", :headers => @headers)
       # @type [Hash]
