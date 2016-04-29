@@ -15,64 +15,68 @@ class SQLLog
   KICK_INSERT    = "INSERT INTO logs (timestamp, user, target, event) VALUES(NOW(), '%s', '%s', 'KICK')"
   BAN_INSERT     = 'INSERT INTO logs (timestamp, user, target, ban_reason, event, ban_time) '\
                   "VALUES(NOW(), '%s', '%s', '%s', '%s', %d)"
+  
   # @param [Chatbot::Client] bot
   def initialize(bot)
     super(bot)
-    @client = Mysql2::Client.new(
-                :host      => @client.config[:sqlhost],
-                :username  => @client.config[:sqluser],
-                :password  => @client.config[:sqlpass],
-                :database  => @client.config[:sqldb],
-                :reconnect => true)
+    @connection_pool = ConnectionPool.new(size: 5, timeout: 5) {
+                          Mysql2::Client.new(
+                            :host      => @client.config[:sqlhost],
+                            :username  => @client.config[:sqluser],
+                            :password  => @client.config[:sqlpass],
+                            :database  => @client.config[:sqldb],
+                            :reconnect => true)
+                        }
   end
-
-  # @return Mysql2::Client
-  #def make_db
-  #  Mysql2::Client.new(:host      => @client.config[:sqlhost],
-  #                     :username  => @client.config[:sqluser],
-  #                     :password  => @client.config[:sqlpass],
-  #                     :database  => @client.config[:sqldb])
-  #end
 
   # @param [User] user
   # @param [String] message
   def log_message(user, message)
-    message.split(/\n/).each do |line|
-      if /^\/me/.match(line) and message.start_with? '/me'
-        @client.query(ME_INSERT % [user.name, line.gsub(/^\/me /, '')].map(&Mysql2::Client.method(:escape)))
-      elsif message.start_with? '/me'
-        @client.query(ME_INSERT % [user.name, line.gsub(/^\/me /, '')].map(&Mysql2::Client.method(:escape)))
-      else
-        @client.query(MESSAGE_INSERT % [user.name, line].map(&Mysql2::Client.method(:escape)))
+    @connection_pool.with do |conn|
+      message.split(/\n/).each do |line|
+        if /^\/me/.match(line) and message.start_with? '/me'
+          conn.query(ME_INSERT % [user.name, line.gsub(/^\/me /, '')].map(&Mysql2::Client.method(:escape)))
+        elsif message.start_with? '/me'
+          conn.query(ME_INSERT % [user.name, line.gsub(/^\/me /, '')].map(&Mysql2::Client.method(:escape)))
+        else
+          conn.query(MESSAGE_INSERT % [user.name, line].map(&Mysql2::Client.method(:escape)))
+        end
       end
     end
   end
 
   # @param [Hash] data
   def log_join(data)
-    @client.query("INSERT INTO logs (timestamp, user, event) VALUES(NOW(), '#{Mysql2::Client.escape(data['attrs']['name'])}', 'JOIN')")
+    @connection_pool.with do |conn|
+      conn.query("INSERT INTO logs (timestamp, user, event) VALUES(NOW(), '#{Mysql2::Client.escape(data['attrs']['name'])}', 'JOIN')")
+    end
   end
 
   # @param [Hash] data
   def log_part(data)
-    @client.query("INSERT INTO logs (timestamp, user, event) VALUES(NOW(), '#{Mysql2::Client.escape(data['attrs']['name'])}', 'PART')")
+    @connection_pool.with do |conn|
+      conn.query("INSERT INTO logs (timestamp, user, event) VALUES(NOW(), '#{Mysql2::Client.escape(data['attrs']['name'])}', 'PART')")
+    end
   end
 
   # @param [Hash] data
   def log_kick(data)
-    @client.query(KICK_INSERT % [
+    @connection_pool.with do |conn|
+      conn.query(KICK_INSERT % [
                     data['attrs']['moderatorName'],
                     data['attrs']['kickedUserName']
                   ].map(&Mysql2::Client.method(:escape)))
+    end
   end
 
   # @param [Hash] data
   def log_ban(data)
-    time = data['attrs']['time'] == '31536000000' ? -1 : data['attrs']['time'].to_i
-    @client.query(BAN_INSERT % ([data['attrs']['moderatorName'],
+    @connection_pool.with do |conn|
+      time = data['attrs']['time'] == '31536000000' ? -1 : data['attrs']['time'].to_i
+      conn.query(BAN_INSERT % ([data['attrs']['moderatorName'],
                              data['attrs']['kickedUserName'],
                              data['attrs']['reason'],
                              time == 0 ? 'UNBAN' : 'BAN'].map(&Mysql2::Client.method(:escape)) + [time]))
+    end
   end
-
 end
