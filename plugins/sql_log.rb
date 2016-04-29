@@ -1,4 +1,5 @@
 require_relative '../plugin'
+require 'connection_pool'
 require 'mysql2'
 
 class SQLLog
