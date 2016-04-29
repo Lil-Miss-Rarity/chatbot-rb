@@ -17,43 +17,49 @@ class SQLLog
   # @param [Chatbot::Client] bot
   def initialize(bot)
     super(bot)
+    @client = Mysql2::Client.new(
+                :host      => @client.config[:sqlhost],
+                :username  => @client.config[:sqluser],
+                :password  => @client.config[:sqlpass],
+                :database  => @client.config[:sqldb],
+                :reconnect => true)
   end
 
   # @return Mysql2::Client
-  def make_db
-    Mysql2::Client.new(:host      => @client.config[:sqlhost],
-                       :username  => @client.config[:sqluser],
-                       :password  => @client.config[:sqlpass],
-                       :database  => @client.config[:sqldb])
-  end
+  #def make_db
+  #  Mysql2::Client.new(:host      => @client.config[:sqlhost],
+  #                     :username  => @client.config[:sqluser],
+  #                     :password  => @client.config[:sqlpass],
+  #                     :database  => @client.config[:sqldb])
+  #end
 
   # @param [User] user
   # @param [String] message
   def log_message(user, message)
     message.split(/\n/).each do |line|
       if /^\/me/.match(line) and message.start_with? '/me'
-        make_db.query(ME_INSERT % [user.name, line.gsub(/^\/me /, '')].map(&Mysql2::Client.method(:escape)))
+        @client.query(ME_INSERT % [user.name, line.gsub(/^\/me /, '')].map(&Mysql2::Client.method(:escape)))
       elsif message.start_with? '/me'
-        make_db.query(ME_INSERT % [user.name, line.gsub(/^\/me /, '')].map(&Mysql2::Client.method(:escape)))
+        @client.query(ME_INSERT % [user.name, line.gsub(/^\/me /, '')].map(&Mysql2::Client.method(:escape)))
       else
-        make_db.query(MESSAGE_INSERT % [user.name, line].map(&Mysql2::Client.method(:escape)))
+        @client.query(MESSAGE_INSERT % [user.name, line].map(&Mysql2::Client.method(:escape)))
       end
     end
   end
 
   # @param [Hash] data
   def log_join(data)
-    make_db.query("INSERT INTO logs (timestamp, user, event) VALUES(NOW(), '#{Mysql2::Client.escape(data['attrs']['name'])}', 'JOIN')")
+    @client.query("INSERT INTO logs (timestamp, user, event) VALUES(NOW(), '#{Mysql2::Client.escape(data['attrs']['name'])}', 'JOIN')")
   end
 
   # @param [Hash] data
   def log_part(data)
-    make_db.query("INSERT INTO logs (timestamp, user, event) VALUES(NOW(), '#{Mysql2::Client.escape(data['attrs']['name'])}', 'PART')")
+    @client.query("INSERT INTO logs (timestamp, user, event) VALUES(NOW(), '#{Mysql2::Client.escape(data['attrs']['name'])}', 'PART')")
   end
 
   # @param [Hash] data
   def log_kick(data)
-    make_db.query(KICK_INSERT % [
+    @client.query(KICK_INSERT % [
                     data['attrs']['moderatorName'],
                     data['attrs']['kickedUserName']
                   ].map(&Mysql2::Client.method(:escape)))
@@ -62,7 +68,7 @@ class SQLLog
   # @param [Hash] data
   def log_ban(data)
     time = data['attrs']['time'] == '31536000000' ? -1 : data['attrs']['time'].to_i
-    make_db.query(BAN_INSERT % ([data['attrs']['moderatorName'],
+    @client.query(BAN_INSERT % ([data['attrs']['moderatorName'],
                              data['attrs']['kickedUserName'],
                              data['attrs']['reason'],
                              time == 0 ? 'UNBAN' : 'BAN'].map(&Mysql2::Client.method(:escape)) + [time]))
