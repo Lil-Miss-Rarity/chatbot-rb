@@ -14,8 +14,8 @@ module Chatbot
     include HTTParty
     include Events
 
-    USER_AGENT = 'sactage/chatbot-rb v2.2.0 (fyi socket.io sucks) [http://github.com/sactage/chatbot-rb]'
-    CONFIG_FILE = 'config.yml'
+    USER_AGENT = 'shahbot/version-0.1.2 (socket.io still sucks)'
+    CONFIG_FILE = '../data/config.yml'
 
     attr_accessor :session, :clientid, :handlers, :config, :userlist, :api, :threads
     attr_reader :plugins
@@ -25,11 +25,13 @@ module Chatbot
         $logger.fatal "Config: #{CONFIG_FILE} not found!"
         exit
       end
+
       $logger.debug 'init'
+
       @config = YAML.load_file(File.join(__dir__, CONFIG_FILE))
-      @base_url = @config.key?('dev') ? 'http://localhost:8080' : "http://#{@config['wiki']}.wikia.com"
+      @base_url = @config.key?('dev') ? 'http://localhost:8080' : "http://#{@config['wikiname']}.wikia.com"
       @api = MediaWiki::Gateway.new @base_url + '/api.php'
-      @api.login(@config['user'], @config['password'])
+      @api.login(@config['username'], @config['password'])
       @time_cachebuster = 0
       @headers = {
           'User-Agent' => USER_AGENT,
@@ -42,7 +44,9 @@ module Chatbot
       @userlist = {}
       @userlist_mutex = Mutex.new
       @running = true
+
       fetch_chat_info
+
       @threads = []
       @ping_thread = nil
       @plugins = []
@@ -75,11 +79,15 @@ module Chatbot
     # Fetch important data from chat
     def fetch_chat_info
       $logger.debug 'fetch_chat_info'
+
       # @type [HTTParty::Response]
       res = HTTParty.get("#{@base_url}/wikia.php?controller=Chat&format=json", :headers => @headers)
+
       # @type [Hash]
       data = JSON.parse(res.body, :symbolize_names => true)
+
       $logger.debug data
+
       @key = data[:chatkey]
       @room = data[:roomId]
       @mod = data[:isChatMod]
@@ -100,13 +108,17 @@ module Chatbot
           :serverId => @server,
           :wikiId => @server
       }
+
       if @config.key?('dev')
         self.class.base_uri "http://#{data[:chatServerHost]}:#{data[:chatServerPort]}/"
       else
         self.class.base_uri "http://#{data[:chatServerHost]}/"
       end
+
       res = get
+
       $logger.debug res
+
       @request_options[:sid] = JSON.parse(res.body[5, res.body.size-1], :symbolize_names => true)[:sid]
       @headers['Cookie'] = res.headers['set-cookie']
     end
@@ -116,6 +128,7 @@ module Chatbot
     def get(path: '/socket.io/')
       opts = @request_options.merge({:time_cachebuster => Time.now.to_ms.to_s + '-' + @time_cachebuster.to_s})
       @time_cachebuster +=1
+
       self.class.get(path, :query => opts, :headers => @headers)
     end
 
@@ -123,9 +136,11 @@ module Chatbot
     # @param [Hash] body
     def post(body)
       $logger.debug body.to_json
+
       body = Util::format_message(body == :ping ? '2' : '42' + ["message", {:id => nil, :attrs => body}.to_json].to_json)
       opts = @request_options.merge({:time_cachebuster => Time.now.to_ms.to_s + '-' + @time_cachebuster.to_s})
       @time_cachebuster += 1
+
       self.class.post('/socket.io/', :query => opts, :body => body, :headers => @headers)
     end
 
@@ -135,14 +150,19 @@ module Chatbot
         begin
           res = get
           body = res.body
+
           $logger.debug body
+
           spl = body.match(/(?:\x00.+?#{255.chr}(.+?))+$/)
+
           if spl.nil? and body.include? 'Session ID unknown'
             @running = false
             break
           end
+
           spl = body.match(/(?:\x00.+?#{255.chr}(.+?))+$/)
           next unless spl
+
           spl.captures.each do |message|
             @threads << Thread.new(message) {
               on_socket_message(message.gsub(/^42/, ''))
@@ -153,6 +173,7 @@ module Chatbot
           @running = false
         end
       end
+
       @handlers[:quitting].each { |handler| handler.call(nil) }
       @threads.each { |thr| thr.join }
       @ping_thread.kill unless @ping_thread.nil?
@@ -170,7 +191,7 @@ module Chatbot
     # Sends a message to chat
     # @param [String] text
     def send_msg(text)
-      post(:msgType => :chat, :text => text, :name => @config['user'])
+      post(:msgType => :chat, :text => text, :name => @config['username'])
     end
 
     # Kicks a user from chat. Requires mod rights (or above)

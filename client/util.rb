@@ -39,7 +39,7 @@ class User
       when :staff
         @staff or is? :dev
       when :dev
-        @name.eql? 'Sactage'
+        @name.eql? @config['developer']
       else
         false
     end
